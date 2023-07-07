@@ -19,7 +19,7 @@
 ------------------------------------------------------------------------- */
 
 
-#include "fix_pafi.h"
+#include "fix_blue.h"
 
 #include "atom.h"
 #include "citeme.h"
