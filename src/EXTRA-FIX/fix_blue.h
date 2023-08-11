@@ -13,7 +13,7 @@
 
 #ifdef FIX_CLASS
 // clang-format off
-FixStyle(pafi,FixPAFI);
+FixStyle(blue,FixPAFI);
 // clang-format on
 #else
 
@@ -51,8 +51,8 @@ class FixPAFI : public Fix {
   int varflag, icompute;
   char *computename;
   class Compute *PathCompute;
-  double proj[6], proj_all[6];          // f,v,h, psi
-  double results[5], results_all[5];    // f.n, (f.n)**2, psi, dx.n
+  double proj[7], proj_all[7];          // f,v,h, psi
+  double results[6], results_all[6];    // f.n, (f.n)**2, psi, dx.n
   double c_v[10], c_v_all[10];
   double temperature, gamma, sqrtD, t_period, local_norm, mass_f;
   int force_flag, od_flag, com_flag;

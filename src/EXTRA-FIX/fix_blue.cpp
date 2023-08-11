@@ -19,8 +19,8 @@
 ------------------------------------------------------------------------- */
 
 
-#include "fix_pafi.h"
-
+#include "fix_blue.h"
+#include "stdio.h"
 #include "atom.h"
 #include "citeme.h"
 #include "comm.h"
@@ -68,7 +68,7 @@ FixPAFI::FixPAFI(LAMMPS *lmp, int narg, char **arg) :
 
   dynamic_group_allow = 0;
   vector_flag = 1;
-  size_vector = 5;
+  size_vector = 6;
   global_freq = 1;
   extvector = 0;
   od_flag = 0;
@@ -83,8 +83,8 @@ FixPAFI::FixPAFI(LAMMPS *lmp, int narg, char **arg) :
   PathCompute = modify->compute[icompute];
   if (PathCompute->peratom_flag==0)
     error->all(FLERR,"Compute for fix pafi does not calculate a local array");
-  if (PathCompute->size_peratom_cols < 9)
-    error->all(FLERR,"Compute for fix pafi must have 9 fields per atom");
+  if (PathCompute->size_peratom_cols < 6)
+    error->all(FLERR,"Compute for fix pafi must have 6 fields per atom");
 
   if (comm->me==0)
     utils::logmesg(lmp,"fix pafi compute name,style: {},{}\n",computename,PathCompute->style);
@@ -118,11 +118,11 @@ FixPAFI::FixPAFI(LAMMPS *lmp, int narg, char **arg) :
     c_v[i] = 0.;
     c_v_all[i] = 0.;
   }
-  for (int i=0; i<6; i++) {
+  for (int i=0; i<7; i++) {
     proj[i] = 0.0;
     proj_all[i] = 0.0;
   }
-  for (int i=0; i<5; i++) {
+  for (int i=0; i<6; i++) {
     results[i] = 0.0;
     results_all[i] = 0.0;
   }
@@ -173,8 +173,8 @@ void FixPAFI::init()
   PathCompute = modify->compute[icompute];
   if (PathCompute->peratom_flag==0)
     error->all(FLERR,"Compute for fix pafi does not calculate a local array");
-  if (PathCompute->size_peratom_cols < 9)
-    error->all(FLERR,"Compute for fix pafi must have 9 fields per atom");
+  if (PathCompute->size_peratom_cols < 6)
+    error->all(FLERR,"Compute for fix pafi must have 6 fields per atom");
 
 
   if (utils::strmatch(update->integrate_style,"^respa")) {
@@ -186,8 +186,8 @@ void FixPAFI::init()
 
 }
 
-void FixPAFI::setup(int vflag)
-{
+ void FixPAFI::setup(int vflag){
+
   if (utils::strmatch(update->integrate_style,"^verlet"))
     post_force(vflag);
   else
@@ -207,6 +207,19 @@ void FixPAFI::min_setup(int vflag)
 }
 
 
+void matrixMultiply(double A[3][3], double B[3][3], double result[3][3]) {
+    for (int i = 0; i < 3; ++i) {
+        for (int j = 0; j < 3; ++j) {
+            result[i][j] = 0;
+            for (int k = 0; k < 3; ++k) {
+                result[i][j] += A[i][k] * B[k][j];
+            }
+        }
+    }
+}
+
+
+
 void FixPAFI::post_force(int /*vflag*/)
 {
   double **x = atom->x;
@@ -217,7 +230,20 @@ void FixPAFI::post_force(int /*vflag*/)
   int *type = atom->type;
   int *mask = atom->mask;
   int nlocal = atom->nlocal;
+  double fact = 0.0;
+  int natoms = atom->natoms;
+  double *h_inv = domain->h_inv;
+  double *h_rate = domain->h_rate;
+  double tpg ;
+  double M_hinv[3][3] = {{h_inv[0], h_inv[5], h_inv[4]},
+	           {h_inv[5], h_inv[1], h_inv[3]}, 
+	           {h_inv[4], h_inv[3], h_inv[2]}};
 
+  double M_hrate[3][3] = {{h_rate[0], h_rate[5], h_rate[4]},
+	           {h_rate[5], h_rate[1], h_rate[3]}, 
+	           {h_rate[4], h_rate[3], h_rate[2]}};
+  double hrate_hinv[3][3];
+  matrixMultiply(M_hrate,M_hinv,hrate_hinv);
   // reallocate norm array if necessary
   if (atom->nmax > maxatom) {
     maxatom = atom->nmax;
@@ -233,9 +259,8 @@ void FixPAFI::post_force(int /*vflag*/)
   // c_v 0,1,2 = fxcom, fycom, fzcom etc
   for (int i = 0; i < 10; i++) {
     c_v[i] = 0.;
-    c_v_all[i] = 0.;
-  }
-  for (int i = 0; i < 6; i++) {
+    c_v_all[i] = 0.;  }
+  for (int i = 0; i < 7; i++) {
     proj[i] = 0.;
     proj_all[i] = 0.;
   }
@@ -243,7 +268,19 @@ void FixPAFI::post_force(int /*vflag*/)
   double deviation[3] = {0.,0.,0.};
 
   force_flag=0;
+
+
   for (int i = 0; i < nlocal; i++) {
+    if (rmass) mass_f = sqrt(rmass[i]);
+        else mass_f = sqrt(mass[type[i]]);
+      fact += path[i][3]*path[i][3] / (mass_f*mass_f);//(path**2/m)
+      fact += path[i][4]*path[i][4] / (mass_f*mass_f);
+      fact += path[i][5]*path[i][5] / (mass_f*mass_f);
+}
+  for (int i = 0; i < nlocal; i++) {
+    if (rmass) mass_f = sqrt(rmass[i]);
+        else mass_f = sqrt(mass[type[i]]);
+	
     if (mask[i] & groupbit) {
       h[i][0] = random->uniform() - 0.5;
       h[i][1] = random->uniform() - 0.5;
@@ -277,16 +314,21 @@ void FixPAFI::post_force(int /*vflag*/)
       proj[5] += f[i][3]*deviation[0]; // (x-path).f
       proj[5] += f[i][4]*deviation[1]; // (x-path).f
       proj[5] += f[i][5]*deviation[2]; // (x-path).f
-
+      
+      proj[6] += f[i][0] * path[i][3] / (mass_f*mass_f); // (f.n)/m
+      proj[6] += f[i][1] * path[i][4] / (mass_f*mass_f);
+      proj[6] += f[i][2] * path[i][5] / (mass_f*mass_f);	 
     }
   }
-
+    
+      
+  proj[6] /= fact; 
   if (com_flag == 0) {
     c_v[9] += 1.0;
   } else {
     for (int i = 0; i < nlocal; i++)
       if (mask[i] & groupbit) {
-
+        //printf("%f %f %f\n", x[i][0], x[i][1], x[i][2]);
         c_v[0] += f[i][0];
         c_v[1] += f[i][1];
         c_v[2] += f[i][2];
@@ -302,32 +344,40 @@ void FixPAFI::post_force(int /*vflag*/)
         c_v[9] += 1.0;
       }
   }
-  MPI_Allreduce(proj,proj_all,6,MPI_DOUBLE,MPI_SUM,world);
+  MPI_Allreduce(proj,proj_all,7,MPI_DOUBLE,MPI_SUM,world);
   MPI_Allreduce(c_v,c_v_all,10,MPI_DOUBLE,MPI_SUM,world);
 
-  // results - f.n*(1-psi), (f.n)^2*(1-psi)^2, 1-psi, dX.n
+  // results - f.n*(1-psi), (f.n)^2*(1-psi)^2, 1-psi, dX.n, multiplicateur lagrange
   results_all[0] = proj_all[0] * (1.-proj_all[3]);
   results_all[1] = results_all[0] * results_all[0];
-  results_all[2] = 1.-proj_all[3];
+  results_all[2] = x[0][0];
   results_all[3] = fabs(proj_all[4]);
   results_all[4] = proj_all[5]; // dX.f
+  results_all[5] = proj_all[6]; // (f.n/m)/(n.n/m)
   force_flag = 1;
+  tpg = (h_inv[0]*h_rate[0] + h_inv[5]*h_rate[5] + h_inv[4]*h_rate[4]) 
+     + (h_inv[5]*h_rate[5] + h_inv[1]*h_rate[1] + h_inv[3]*h_rate[3])
+     + (h_inv[4]*h_rate[4] + h_inv[3]*h_rate[3] + h_inv[2]*h_rate[2]);
 
+  
   for (int i = 0; i < nlocal; i++) {
     if (mask[i] & groupbit) {
+      if (rmass) mass_f = sqrt(rmass[i]);
+        else mass_f = sqrt(mass[type[i]]);
 
-      f[i][0] -= proj_all[0] * path[i][3] + c_v_all[0]/c_v_all[9];
-      f[i][1] -= proj_all[0] * path[i][4] + c_v_all[1]/c_v_all[9];
-      f[i][2] -= proj_all[0] * path[i][5] + c_v_all[2]/c_v_all[9];
+      f[i][0] -= path[i][3] * proj_all[6]; //  proj_all[0] * path[i][3] + c_v_all[0]/c_v_all[9];
+      f[i][1] -= path[i][4] * proj_all[6] ;// proj_all[0] * path[i][4] + c_v_all[1]/c_v_all[9];
+      f[i][2] -= path[i][5] * proj_all[6] ;// proj_all[0] * path[i][5] + c_v_all[2]/c_v_all[9];
 
-      v[i][0] -= proj_all[1] * path[i][3] + c_v_all[3]/c_v_all[9];
-      v[i][1] -= proj_all[1] * path[i][4] + c_v_all[4]/c_v_all[9];
-      v[i][2] -= proj_all[1] * path[i][5] + c_v_all[5]/c_v_all[9];
+      //v[i][0] -= proj_all[1] * path[i][3] + c_v_all[3]/c_v_all[9];
+      //v[i][1] -= proj_all[1] * path[i][4] + c_v_all[4]/c_v_all[9];
+      //v[i][2] -= proj_all[1] * path[i][5] + c_v_all[5]/c_v_all[9];
 
-      h[i][0] -= proj_all[2] * path[i][3] + c_v_all[6]/c_v_all[9];
-      h[i][1] -= proj_all[2] * path[i][4] + c_v_all[7]/c_v_all[9];
-      h[i][2] -= proj_all[2] * path[i][5] + c_v_all[8]/c_v_all[9];
-    }
+      //h[i][0] -= proj_all[2] * path[i][3] + c_v_all[6]/c_v_all[9];
+      //h[i][1] -= proj_all[2] * path[i][4] + c_v_all[7]/c_v_all[9];
+      //h[i][2] -= proj_all[2] * path[i][5] + c_v_all[8]/c_v_all[9];
+        
+}
   }
 
   if (od_flag == 0) {
@@ -343,7 +393,15 @@ void FixPAFI::post_force(int /*vflag*/)
         f[i][0] += sqrtD * mass_f * h[i][0];
         f[i][1] += sqrtD * mass_f * h[i][1];
         f[i][2] += sqrtD * mass_f * h[i][2];
-      }
+        
+	f[i][0] -= mass_f * mass_f * v[i][0] * tpg / (3*natoms);   
+        f[i][1] -= mass_f * mass_f * v[i][1] * tpg / (3*natoms);   
+        f[i][2] -= mass_f * mass_f * v[i][2] * tpg / (3*natoms);   
+
+        f[i][0] -= 2 * mass_f * mass_f * v[i][2]    
+        f[i][1] -= 2 * mass_f * mass_f * v[i][2]    
+        f[i][2] -= 2 * mass_f * mass_f * v[i][2]    
+     }
     }
   } else {
     for (int i = 0; i < nlocal; i++) {
@@ -356,15 +414,26 @@ void FixPAFI::post_force(int /*vflag*/)
         f[i][1] += sqrtD * h[i][1] * mass_f;
         f[i][2] += sqrtD * h[i][2] * mass_f;
 
-        f[i][0] /=  gamma * mass_f * mass_f;
+        f[i][0] /=  gamma * mass_f * mass_f * (hinv_hrate[0][0]*v[0] + ;
         f[i][1] /=  gamma * mass_f * mass_f;
         f[i][2] /=  gamma * mass_f * mass_f;
 
       }
+   }
+}
+}
+void matrixMultiply(int A[3][3], int B[3][3], int result[3][3])
+{
+    for (int i = 0; i < 3; ++i) {
+        for (int j = 0; j < 3; ++j) {
+            result[i][j] = 0; 
+            for (int k = 0; k < 3; ++k) { 
+                result[i][j] += A[i][k] * B[k][j];
+            }
+        }
     }
-  }
+}
 
-};
 
 void FixPAFI::post_force_respa(int vflag, int ilevel, int /*iloop*/)
 {
@@ -381,12 +450,15 @@ void FixPAFI::post_force_respa(int vflag, int ilevel, int /*iloop*/)
         for (int k = 0; k < 3; k++) f[i][k] = 0.0;
       }
   }
-};
+}
 
 void FixPAFI::min_post_force(int /*vflag*/)
 {
+  double *rmass = atom->rmass;
+  double *mass = atom->mass;
   double **x = atom->x;
   double **v = atom->v;
+  int *type = atom->type;
   double **f = atom->f;
   int *mask = atom->mask;
   int nlocal = atom->nlocal;
@@ -401,7 +473,7 @@ void FixPAFI::min_post_force(int /*vflag*/)
     c_v[i] = 0.;
     c_v_all[i] = 0.;
   }
-  for (int i = 0; i < 6; i++) {
+  for (int i = 0; i < 7; i++) {
     proj[i] = 0.;
     proj_all[i] = 0.;
   }
@@ -411,6 +483,8 @@ void FixPAFI::min_post_force(int /*vflag*/)
   force_flag=0;
   for (int i = 0; i < nlocal; i++) {
     if (mask[i] & groupbit) {
+      if (rmass) mass_f = sqrt(rmass[i]);
+        else mass_f = sqrt(mass[type[i]]);
 
       proj[0] += f[i][0] * path[i][3]; // f.n
       proj[0] += f[i][1] * path[i][4]; // f.n
@@ -440,7 +514,10 @@ void FixPAFI::min_post_force(int /*vflag*/)
       proj[5] += f[i][3]*deviation[0]; // (x-path).f
       proj[5] += f[i][4]*deviation[1]; // (x-path).f
       proj[5] += f[i][5]*deviation[2]; // (x-path).f
-
+     
+      proj[6] += f[i][0] * path[i][3] / (mass_f*mass_f); // (f.n)/m
+      proj[6] += f[i][1] * path[i][4] / (mass_f*mass_f);
+      proj[6] += f[i][2] * path[i][5] / (mass_f*mass_f);
     }
   }
 
@@ -465,7 +542,7 @@ void FixPAFI::min_post_force(int /*vflag*/)
         c_v[9] += 1.0;
       }
   }
-  MPI_Allreduce(proj,proj_all,6,MPI_DOUBLE,MPI_SUM,world);
+  MPI_Allreduce(proj,proj_all,7,MPI_DOUBLE,MPI_SUM,world);
   MPI_Allreduce(c_v,c_v_all,10,MPI_DOUBLE,MPI_SUM,world);
 
   results_all[0] = proj_all[0] * (1.-proj_all[3]); // f.n * psi
@@ -473,8 +550,9 @@ void FixPAFI::min_post_force(int /*vflag*/)
   results_all[2] = 1.-proj_all[3]; // psi
   results_all[3] = fabs(proj_all[4]); // dX.n
   results_all[4] = proj_all[5]; // dX.f
+  results_all[5] = proj_all[6]; // Lagrange mult
 
-  MPI_Bcast(results_all,5,MPI_DOUBLE,0,world);
+  MPI_Bcast(results_all,6,MPI_DOUBLE,0,world);
   force_flag = 1;
 
   for (int i = 0; i < nlocal; i++) {
@@ -523,7 +601,7 @@ void FixPAFI::initial_integrate(int /*vflag*/)
     c_v[i] = 0.;
     c_v_all[i] = 0.;
   }
-  for (int i = 0; i < 6; i++) {
+  for (int i = 0; i < 7; i++) {
     proj[i] = 0.;
     proj_all[i] = 0.;
   }
@@ -633,7 +711,7 @@ void FixPAFI::final_integrate()
     c_v[i] = 0.;
     c_v_all[i] = 0.;
   }
-  for (int i = 0; i < 6; i++) {
+  for (int i = 0; i < 7; i++) {
     proj[i] = 0.;
     proj_all[i] = 0.;
   }
