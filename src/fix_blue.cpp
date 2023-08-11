@@ -398,9 +398,10 @@ void FixPAFI::post_force(int /*vflag*/)
         f[i][1] -= mass_f * mass_f * v[i][1] * tpg / (3*natoms);   
         f[i][2] -= mass_f * mass_f * v[i][2] * tpg / (3*natoms);   
 
-        f[i][0] -= 2 * mass_f * mass_f * v[i][2]    
-        f[i][1] -= 2 * mass_f * mass_f * v[i][2]    
-        f[i][2] -= 2 * mass_f * mass_f * v[i][2]    
+        f[i][0] -= 2 * mass_f * mass_f * (hrate_hinv[0][0]*v[i][0] + hrate_hinv[0][1] * v[i][1] + hrate_hinv[0][2] * v[i][2]) ;    
+        f[i][1] -= 2 * mass_f * mass_f * (hrate_hinv[1][0]*v[i][0] + hrate_hinv[1][1] * v[i][1] + hrate_hinv[1][2] * v[i][2]) ;    
+        f[i][2] -= 2 * mass_f * mass_f * (hrate_hinv[2][0]*v[i][0] + hrate_hinv[2][1] * v[i][1] + hrate_hinv[2][2] * v[i][2]) ;
+   
      }
     }
   } else {
@@ -414,10 +415,9 @@ void FixPAFI::post_force(int /*vflag*/)
         f[i][1] += sqrtD * h[i][1] * mass_f;
         f[i][2] += sqrtD * h[i][2] * mass_f;
 
-        f[i][0] /=  gamma * mass_f * mass_f * (hinv_hrate[0][0]*v[0] + ;
-        f[i][1] /=  gamma * mass_f * mass_f;
-        f[i][2] /=  gamma * mass_f * mass_f;
-
+        f[i][0] /=  gamma * mass_f * mass_f;
+        f[i][0] /=  gamma * mass_f * mass_f;
+        f[i][0] /=  gamma * mass_f * mass_f ;
       }
    }
 }
