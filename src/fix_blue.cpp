@@ -290,13 +290,13 @@ void FixPAFI::post_force(int /*vflag*/)
       proj[0] += f[i][1] * path[i][4]; // f.n
       proj[0] += f[i][2] * path[i][5]; // f.n
 
-      proj[1] += v[i][0] * path[i][3]; // v.n
-      proj[1] += v[i][1] * path[i][4]; // v.n
-      proj[1] += v[i][2] * path[i][5]; // v.n
+      proj[1] += v[i][0] * path[i][3]/(mass_f*mass_f); // v.n
+      proj[1] += v[i][1] * path[i][4]/(mass_f*mass_f); // v.n
+      proj[1] += v[i][2] * path[i][5]/(mass_f*mass_f); // v.n
 
-      proj[2] += h[i][0] * path[i][3]; // h.n
-      proj[2] += h[i][1] * path[i][4]; // h.n
-      proj[2] += h[i][2] * path[i][5]; // h.n
+      proj[2] += h[i][0] * path[i][3]/(mass_f*mass_f); // h.n
+      proj[2] += h[i][1] * path[i][4]/(mass_f*mass_f); // h.n
+      proj[2] += h[i][2] * path[i][5]/(mass_f*mass_f); // h.n
 
       deviation[0] = x[i][0]-path[i][0]; // x-path
       deviation[1] = x[i][1]-path[i][1]; // x-path
@@ -346,13 +346,16 @@ void FixPAFI::post_force(int /*vflag*/)
   }
   MPI_Allreduce(proj,proj_all,7,MPI_DOUBLE,MPI_SUM,world);
   MPI_Allreduce(c_v,c_v_all,10,MPI_DOUBLE,MPI_SUM,world);
+tpg = (h_inv[0]*h_rate[0] + h_inv[5]*h_rate[5] + h_inv[4]*h_rate[4])
+     + (h_inv[5]*h_rate[5] + h_inv[1]*h_rate[1] + h_inv[3]*h_rate[3])
+     + (h_inv[4]*h_rate[4] + h_inv[3]*h_rate[3] + h_inv[2]*h_rate[2]);
 
   // results - f.n*(1-psi), (f.n)^2*(1-psi)^2, 1-psi, dX.n, multiplicateur lagrange
   results_all[0] = proj_all[0] * (1.-proj_all[3]);
   results_all[1] = results_all[0] * results_all[0];
   results_all[2] = x[0][0];
   results_all[3] = fabs(proj_all[4]);
-  results_all[4] = proj_all[5]; // dX.f
+  results_all[4] = tpg; // dX.f
   results_all[5] = proj_all[6]; // (f.n/m)/(n.n/m)
   force_flag = 1;
   tpg = (h_inv[0]*h_rate[0] + h_inv[5]*h_rate[5] + h_inv[4]*h_rate[4]) 
@@ -365,17 +368,17 @@ void FixPAFI::post_force(int /*vflag*/)
       if (rmass) mass_f = sqrt(rmass[i]);
         else mass_f = sqrt(mass[type[i]]);
 
-      f[i][0] -= path[i][3] * proj_all[6]; //  proj_all[0] * path[i][3] + c_v_all[0]/c_v_all[9];
-      f[i][1] -= path[i][4] * proj_all[6] ;// proj_all[0] * path[i][4] + c_v_all[1]/c_v_all[9];
-      f[i][2] -= path[i][5] * proj_all[6] ;// proj_all[0] * path[i][5] + c_v_all[2]/c_v_all[9];
+     // f[i][0] -= path[i][3] * proj_all[6]; //  proj_all[0] * path[i][3] + c_v_all[0]/c_v_all[9];
+     // f[i][1] -= path[i][4] * proj_all[6] ;// proj_all[0] * path[i][4] + c_v_all[1]/c_v_all[9];
+     // f[i][2] -= path[i][5] * proj_all[6] ;// proj_all[0] * path[i][5] + c_v_all[2]/c_v_all[9];
 
-      //v[i][0] -= proj_all[1] * path[i][3] + c_v_all[3]/c_v_all[9];
-      //v[i][1] -= proj_all[1] * path[i][4] + c_v_all[4]/c_v_all[9];
-      //v[i][2] -= proj_all[1] * path[i][5] + c_v_all[5]/c_v_all[9];
+     // v[i][0] -= proj_all[1] * path[i][3];// + c_v_all[3]/c_v_all[9];
+      //v[i][1] -= proj_all[1] * path[i][4];// + c_v_all[4]/c_v_all[9];
+      //v[i][2] -= proj_all[1] * path[i][5];// + c_v_all[5]/c_v_all[9];
 
-      //h[i][0] -= proj_all[2] * path[i][3] + c_v_all[6]/c_v_all[9];
-      //h[i][1] -= proj_all[2] * path[i][4] + c_v_all[7]/c_v_all[9];
-      //h[i][2] -= proj_all[2] * path[i][5] + c_v_all[8]/c_v_all[9];
+     // h[i][0] -= proj_all[2] * path[i][3];// + c_v_all[6]/c_v_all[9];
+     // h[i][1] -= proj_all[2] * path[i][4];// + c_v_all[7]/c_v_all[9];
+     // h[i][2] -= proj_all[2] * path[i][5];// + c_v_all[8]/c_v_all[9];
         
 }
   }
@@ -608,13 +611,13 @@ void FixPAFI::initial_integrate(int /*vflag*/)
 
   for (int i = 0; i < nlocal; i++) {
     if (mask[i] & groupbit) {
-      proj[0] += f[i][0] * path[i][3]; // f.n
-      proj[0] += f[i][1] * path[i][4]; // f.n
-      proj[0] += f[i][2] * path[i][5]; // f.n
+     // proj[0] += f[i][0] * path[i][3]; // f.n
+     // proj[0] += f[i][1] * path[i][4]; // f.n
+     // proj[0] += f[i][2] * path[i][5]; // f.n
 
-      proj[1] += v[i][0] * path[i][3]; // v.n
-      proj[1] += v[i][1] * path[i][4]; // v.n
-      proj[1] += v[i][2] * path[i][5]; // v.n
+     // proj[1] += v[i][0] * path[i][3]; // v.n
+      //proj[1] += v[i][1] * path[i][4]; // v.n
+     // proj[1] += v[i][2] * path[i][5]; // v.n
     }
   }
   if (com_flag == 0) {
@@ -644,23 +647,23 @@ void FixPAFI::initial_integrate(int /*vflag*/)
       for (int i = 0; i < nlocal; i++)
         if (mask[i] & groupbit) {
           dtfm = dtf / rmass[i];
-          v[i][0] += dtfm * (f[i][0]-path[i][3]*proj_all[0] - c_v_all[3]/c_v_all[9]);
-          v[i][1] += dtfm * (f[i][1]-path[i][4]*proj_all[0] - c_v_all[4]/c_v_all[9]);
-          v[i][2] += dtfm * (f[i][2]-path[i][5]*proj_all[0] - c_v_all[5]/c_v_all[9]);
-          x[i][0] += dtv * (v[i][0]-path[i][3]*proj_all[1] - c_v_all[0]/c_v_all[9]);
-          x[i][1] += dtv * (v[i][1]-path[i][4]*proj_all[1] - c_v_all[1]/c_v_all[9]);
-          x[i][2] += dtv * (v[i][2]-path[i][5]*proj_all[1] - c_v_all[2]/c_v_all[9]);
+          v[i][0] += dtfm * (f[i][0]);//-path[i][3]*proj_all[0] - c_v_all[3]/c_v_all[9]);
+          v[i][1] += dtfm * (f[i][1]);//-path[i][4]*proj_all[0] - c_v_all[4]/c_v_all[9]);
+          v[i][2] += dtfm * (f[i][2]);//-path[i][5]*proj_all[0] - c_v_all[5]/c_v_all[9]);
+          x[i][0] += dtv * (v[i][0]);//-path[i][3]*proj_all[1] - c_v_all[0]/c_v_all[9]);
+          x[i][1] += dtv * (v[i][1]);//-path[i][4]*proj_all[1] - c_v_all[1]/c_v_all[9]);
+          x[i][2] += dtv * (v[i][2]);//-path[i][5]*proj_all[1] - c_v_all[2]/c_v_all[9]);
         }
     } else {
       for (int i = 0; i < nlocal; i++)
         if (mask[i] & groupbit) {
           dtfm = dtf / mass[type[i]];
-          v[i][0] += dtfm * (f[i][0]-path[i][3]*proj_all[0] - c_v_all[3]/c_v_all[9]);
-          v[i][1] += dtfm * (f[i][1]-path[i][4]*proj_all[0] - c_v_all[4]/c_v_all[9]);
-          v[i][2] += dtfm * (f[i][2]-path[i][5]*proj_all[0] - c_v_all[5]/c_v_all[9]);
-          x[i][0] += dtv * (v[i][0]-path[i][3]*proj_all[1] - c_v_all[0]/c_v_all[9]);
-          x[i][1] += dtv * (v[i][1]-path[i][4]*proj_all[1] - c_v_all[1]/c_v_all[9]);
-          x[i][2] += dtv * (v[i][2]-path[i][5]*proj_all[1] - c_v_all[2]/c_v_all[9]);
+          v[i][0] += dtfm * (f[i][0]);//-path[i][3]*proj_all[0] - c_v_all[3]/c_v_all[9]);
+          v[i][1] += dtfm * (f[i][1]);//-path[i][4]*proj_all[0] - c_v_all[4]/c_v_all[9]);
+          v[i][2] += dtfm * (f[i][2]);//-path[i][5]*proj_all[0] - c_v_all[5]/c_v_all[9]);
+          x[i][0] += dtv * (v[i][0]);//-path[i][3]*proj_all[1] - c_v_all[0]/c_v_all[9]);
+          x[i][1] += dtv * (v[i][1]);//-path[i][4]*proj_all[1] - c_v_all[1]/c_v_all[9]);
+          x[i][2] += dtv * (v[i][2]);//-path[i][5]*proj_all[1] - c_v_all[2]/c_v_all[9]);
         }
     }
   } else {
@@ -741,17 +744,17 @@ void FixPAFI::final_integrate()
       for (int i = 0; i < nlocal; i++)
         if (mask[i] & groupbit) {
           dtfm = dtf / rmass[i];
-          v[i][0] += dtfm * (f[i][0]-path[i][3]*proj_all[0] - c_v_all[3]/c_v_all[9]);
-          v[i][1] += dtfm * (f[i][1]-path[i][4]*proj_all[0] - c_v_all[4]/c_v_all[9]);
-          v[i][2] += dtfm * (f[i][2]-path[i][5]*proj_all[0] - c_v_all[5]/c_v_all[9]);
+          v[i][0] += dtfm * (f[i][0]);//-path[i][3]*proj_all[0] - c_v_all[3]/c_v_all[9]);
+          v[i][1] += dtfm * (f[i][1]);//-path[i][4]*proj_all[0] - c_v_all[4]/c_v_all[9]);
+          v[i][2] += dtfm * (f[i][2]);//-path[i][5]*proj_all[0] - c_v_all[5]/c_v_all[9]);
         }
     } else {
       for (int i = 0; i < nlocal; i++)
         if (mask[i] & groupbit) {
           dtfm = dtf / mass[type[i]];
-          v[i][0] += dtfm * (f[i][0]-path[i][3]*proj_all[0] - c_v_all[3]/c_v_all[9]);
-          v[i][1] += dtfm * (f[i][1]-path[i][4]*proj_all[0] - c_v_all[4]/c_v_all[9]);
-          v[i][2] += dtfm * (f[i][2]-path[i][5]*proj_all[0] - c_v_all[5]/c_v_all[9]);
+          v[i][0] += dtfm * (f[i][0]);//-path[i][3]*proj_all[0] - c_v_all[3]/c_v_all[9]);
+          v[i][1] += dtfm * (f[i][1]);//-path[i][4]*proj_all[0] - c_v_all[4]/c_v_all[9]);
+          v[i][2] += dtfm * (f[i][2]);//-path[i][5]*proj_all[0] - c_v_all[5]/c_v_all[9]);
         }
     }
   } else {
